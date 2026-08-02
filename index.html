@@ -19,7 +19,7 @@
     html, body {
       width: 100%;
       height: 100%;
-      overflow: hidden !important; /* Evita cualquier barra de desplazamiento global */
+      overflow: hidden !important;
       background-color: #0f172a;
       color: #ffffff;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -33,7 +33,7 @@
       padding: 12px 10px;
     }
 
-    /* Loader */
+    /* Loader con Barra de Progreso */
     #loading {
       position: absolute;
       top: 50%;
@@ -42,8 +42,10 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
       z-index: 10;
+      width: 280px;
+      text-align: center;
     }
 
     .spinner {
@@ -59,14 +61,34 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* Contenedor del Libro sin Scrollbars */
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #38bdf8, #0284c7);
+      transition: width 0.2s ease;
+    }
+
+    #status-text {
+      font-size: 0.9rem;
+      color: #cbd5e1;
+    }
+
+    /* Contenedor del Libro */
     #viewport-wrapper {
       width: 100%;
       height: calc(100vh - 130px);
       display: flex;
       justify-content: center;
       align-items: center;
-      overflow: hidden !important; /* Oculta cualquier desborde al pasar la hoja */
+      overflow: hidden !important;
       position: relative;
     }
 
@@ -79,16 +101,13 @@
 
     #flipbook {
       margin: 0 auto;
-      /* Previene el parpadeo/temblor acelerando por hardware */
       transform-style: preserve-3d;
       backface-visibility: hidden;
     }
 
     .page {
       background-color: #ffffff;
-      display: flex;
-      justify-content: center;
-      align-items: center;
+      position: relative; /* Esencial para posicionar la capa de anotaciones */
       box-shadow: 0 0 15px rgba(0,0,0,0.5);
       overflow: hidden;
     }
@@ -98,6 +117,29 @@
       height: 100% !important;
       object-fit: contain;
       display: block;
+    }
+
+    /* Capa de Enlaces e Hipervínculos Interactivos */
+    .annotationLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: auto;
+      z-index: 5;
+    }
+
+    .annotationLayer a {
+      position: absolute;
+      cursor: pointer;
+      background: rgba(255, 255, 0, 0.0); /* Invisible por defecto */
+      transition: background 0.2s ease;
+    }
+
+    .annotationLayer a:hover {
+      background: rgba(56, 189, 248, 0.2); /* Sombra sutil al pasar el mouse */
+      border: 1px dashed #0284c7;
     }
 
     /* Barra Inferior de Controles */
@@ -141,25 +183,11 @@
       user-select: none;
     }
 
-    .btn:hover {
-      background: #0284c7;
-    }
-
-    .btn-audio {
-      background: #10b981;
-    }
-
-    .btn-audio:hover {
-      background: #059669;
-    }
-
-    .btn-download {
-      background: #0284c7;
-    }
-
-    .btn-download:hover {
-      background: #0369a1;
-    }
+    .btn:hover { background: #0284c7; }
+    .btn-audio { background: #10b981; }
+    .btn-audio:hover { background: #059669; }
+    .btn-download { background: #0284c7; }
+    .btn-download:hover { background: #0369a1; }
 
     #page-info {
       font-size: 0.85rem;
@@ -179,29 +207,22 @@
     }
 
     @media (max-width: 600px) {
-      #viewport-wrapper {
-        height: calc(100vh - 145px);
-      }
-      .controls {
-        padding: 6px 10px;
-        gap: 4px;
-      }
-      .btn {
-        padding: 5px 8px;
-        font-size: 0.75rem;
-      }
-      .footer-title {
-        font-size: 0.6rem;
-      }
+      #viewport-wrapper { height: calc(100vh - 145px); }
+      .controls { padding: 6px 10px; gap: 4px; }
+      .btn { padding: 5px 8px; font-size: 0.75rem; }
+      .footer-title { font-size: 0.6rem; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Mensaje de Carga -->
+  <!-- Loader con Barra de Progreso y Porcentaje -->
   <div id="loading">
     <div class="spinner"></div>
-    <div id="status-text">Cargando PDF...</div>
+    <div class="progress-bar-container">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="status-text">Cargando 0%...</div>
   </div>
 
   <!-- Contenedor del Libro -->
@@ -248,8 +269,8 @@
   </div>
 
   <script>
-    const PDF_URL = 'https://raw.githubusercontent.com/carlosmolina2024/archivos_pdf/main/PORTAL_DEL_AGENTE.pdf';
-    document.getElementById('download-btn').href = PDF_URL;
+    const RAW_PDF_URL = 'https://raw.githubusercontent.com/carlosmolina2024/archivos_pdf/main/PORTAL_DEL_AGENTE.pdf';
+    document.getElementById('download-btn').href = RAW_PDF_URL;
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
@@ -257,21 +278,74 @@
     let pageTexts = [];
     let currentZoom = 1;
 
+    const fuentesPDF = [
+      'https://api.allorigins.win/raw?url=' + encodeURIComponent(RAW_PDF_URL),
+      'https://corsproxy.io/?' + encodeURIComponent(RAW_PDF_URL),
+      RAW_PDF_URL
+    ];
+
+    function actualizarProgreso(porcentaje, texto) {
+      const p = Math.min(Math.max(0, Math.round(porcentaje)), 100);
+      document.getElementById('progress-bar').style.width = `${p}%`;
+      document.getElementById('status-text').innerText = `${texto} (${p}%)`;
+    }
+
+    async function descargarBinarioConFallback() {
+      for (const url of fuentesPDF) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const contentLength = res.headers.get('content-length');
+            if (!contentLength) return await res.arrayBuffer();
+
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+            const reader = res.body.getReader();
+            const chunks = [];
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              loaded += value.length;
+              actualizarProgreso((loaded / total) * 50, 'Descargando PDF');
+            }
+
+            const chunksAll = new Uint8Array(loaded);
+            let position = 0;
+            for (let chunk of chunks) {
+              chunksAll.set(chunk, position);
+              position += chunk.length;
+            }
+            return chunksAll.buffer;
+          }
+        } catch (e) {
+          console.warn('Falló intento con:', url);
+        }
+      }
+      throw new Error('No se pudo acceder al archivo.');
+    }
+
     async function cargarPDF() {
       try {
-        const loadingTask = pdfjsLib.getDocument(PDF_URL);
+        actualizarProgreso(5, 'Iniciando conexión');
+        const arrayBuffer = await descargarBinarioConFallback();
+
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         const pdf = await loadingTask.promise;
         const totalPages = pdf.numPages;
 
         const flipbookEl = document.getElementById('flipbook');
 
         for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          const porcentajePaginas = 50 + ((pageNum / totalPages) * 50);
+          actualizarProgreso(porcentajePaginas, `Procesando pág. ${pageNum} de ${totalPages}`);
+
           const page = await pdf.getPage(pageNum);
           
-          // Extraer texto de la página
+          // Extraer texto para síntesis de voz
           const textContent = await page.getTextContent();
-          const pageString = textContent.items.map(item => item.str).join(' ');
-          pageTexts[pageNum] = pageString;
+          pageTexts[pageNum] = textContent.items.map(item => item.str).join(' ');
 
           const viewport = page.getViewport({ scale: 2.0 });
 
@@ -285,20 +359,64 @@
           canvas.width = viewport.width;
 
           pageDiv.appendChild(canvas);
-          flipbookEl.appendChild(pageDiv);
 
+          // Renderizado del Canvas
           await page.render({
             canvasContext: context,
             viewport: viewport
           }).promise;
 
-          document.getElementById('status-text').innerText = `Procesando página ${pageNum} de ${totalPages}...`;
+          // Extraer y Renderizar Enlaces Interactivas (Annotation Layer)
+          const annotations = await page.getAnnotations();
+          if (annotations.length > 0) {
+            const annotationLayerDiv = document.createElement('div');
+            annotationLayerDiv.className = 'annotationLayer';
+
+            annotations.forEach(annot => {
+              if (annot.subtype === 'Link' && (annot.url || annot.dest)) {
+                const a = document.createElement('a');
+                
+                // Mapear posición escalar del rectángulo de PDF a Canvas
+                const rect = viewport.convertToViewportRectangle(annot.rect);
+                const minX = Math.min(rect[0], rect[2]);
+                const minY = Math.min(rect[1], rect[3]);
+                const width = Math.abs(rect[0] - rect[2]);
+                const height = Math.abs(rect[1] - rect[3]);
+
+                a.style.left = (minX / viewport.width * 100) + '%';
+                a.style.top = (minY / viewport.height * 100) + '%';
+                a.style.width = (width / viewport.width * 100) + '%';
+                a.style.height = (height / viewport.height * 100) + '%';
+
+                if (annot.url) {
+                  a.href = annot.url;
+                  a.target = '_blank';
+                  a.rel = 'noopener noreferrer';
+                } else if (annot.dest && typeof annot.dest === 'string') {
+                  a.href = '#';
+                  a.onclick = (e) => {
+                    e.preventDefault();
+                    // Si es un enlace interno a otra página del PDF
+                    pdf.getDestination(annot.dest).then(dest => {
+                      pdf.getPageIndex(dest[0]).then(pageIndex => {
+                        if (pageFlip) pageFlip.flip(pageIndex);
+                      });
+                    });
+                  };
+                }
+                annotationLayerDiv.appendChild(a);
+              }
+            });
+            pageDiv.appendChild(annotationLayerDiv);
+          }
+
+          flipbookEl.appendChild(pageDiv);
         }
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('flipbook-container').style.display = 'block';
 
-        // CONFIGURACIÓN ANTI-TEMBLOR / ANTI-SCROLLBAR
+        // Inicializar PageFlip
         pageFlip = new St.PageFlip(flipbookEl, {
           width: 430,
           height: 590,
@@ -312,7 +430,7 @@
           usePortrait: false,
           autoSize: false,
           drawShadow: true,
-          mobileScrollSupport: false // Desactiva scroll directo para frenar saltos
+          mobileScrollSupport: false
         });
 
         pageFlip.loadFromHTML(document.querySelectorAll('.page'));
@@ -321,7 +439,7 @@
 
         pageFlip.on('flip', (e) => {
           actualizarInfoPagina(e.data + 1, totalPages);
-          window.speechSynthesis.cancel();
+          if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         });
 
         // Controles Navegación
@@ -336,7 +454,7 @@
         document.getElementById('speak-btn').addEventListener('click', hablarPaginaActual);
 
       } catch (error) {
-        console.error("Error:", error);
+        console.error("Error al procesar el PDF:", error);
         document.getElementById('status-text').innerText = 'Error al procesar el archivo PDF.';
       }
     }
